@@ -172,6 +172,17 @@ files = [
 ]
 
 [[package]]
+name = "systemd-python"
+version = "235"
+description = "Python interface for libsystemd"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "systemd-python-235.tar.gz", hash = "sha256:4e57f39797fd5d9e2d22b8806a252d7c0106c936039d1e71c8c6b8008e695c0a"},
+]
+
+[[package]]
 name = "textual"
 version = "3.4.0"
 description = "Modern Text User Interface framework"
@@ -222,4 +233,4 @@ test = ["coverage", "pytest", "pytest-cov"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13, <4.0"
-content-hash = "ec2864fc228ee954abd8de9c33faca80c8b51b19934a3526a767cb04f3742c40"
+content-hash = "8eadaa74e5933c6f8f5a5f234c0f30855a89aa60828ac813da283463784f78de"

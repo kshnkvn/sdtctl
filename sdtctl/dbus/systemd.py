@@ -1,3 +1,4 @@
+import logging
 from typing import NoReturn
 
 from dbus_next.aio.message_bus import MessageBus
@@ -13,6 +14,7 @@ from sdtctl.dbus.interfaces import (
     TimerFactory,
     TimerPropertiesExtractor,
 )
+from sdtctl.models.systemd_unit import TimerProperties
 from sdtctl.models.timer import Timer
 from sdtctl.system.providers import ProcSystemBootTimeProvider
 from sdtctl.time.converters import StandardTimeConverter
@@ -33,6 +35,8 @@ class SystemdDBusService:
     ) -> None:
         """Initialize the service with optional dependency injection.
         """
+        self._logger = logging.getLogger(__name__)
+
         self._bus: MessageBus | None = None
         self._unit_parser = unit_parser or DBusSystemdUnitParser()
         self._timer_factory = timer_factory
@@ -115,7 +119,11 @@ class SystemdDBusService:
             )
             return self._timer_factory.create_timer(unit_info, properties)  # type: ignore
         except Exception as e:
-            print(f'Warning: Failed to process timer {unit_data[0]}: {e}')
+            self._logger.warning(
+                'Failed to process timer %s: %s',
+                unit_data[0],
+                e,
+            )
             return None
 
     async def _extract_timer_properties(self, object_path: str):
@@ -126,12 +134,12 @@ class SystemdDBusService:
                 object_path
             )
         except Exception as e:
-            print(
-                f'Warning: Failed to extract properties for '
-                f'{object_path}: {e}'
+            self._logger.warning(
+                'Failed to extract properties for %s: %s',
+                object_path,
+                e,
             )
             # Return empty properties as fallback
-            from sdtctl.models.systemd_unit import TimerProperties
             return TimerProperties(
                 next_elapse_realtime_usec=0,
                 next_elapse_monotonic_usec=0,
