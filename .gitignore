@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.env
+.venv
+venv/
+ENV/
+
+# Poetry
+poetry.toml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Test & coverage
+.pytest_cache/
+.coverage
+
+# Ruff
+.ruff_cache/
+
+# IDE/editor
+.vscode/
+.history/
+*.log
+
+# System
+*~

@@ -1,0 +1,33 @@
+[project]
+name = "sdtctl"
+version = "0.1.0"
+description = "Manage systemd timers. View, create and edit without the hassle of editing files."
+authors = [
+    {name = "Ivan Yakushenko",email = "kshnkvn@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.13, <4.0"
+dependencies = [
+    "textual (>=3.4.0,<4.0.0)",
+    "dbus-next (>=0.2.3,<0.3.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.12.0"
+
+
+[tool.ruff]
+line-length = 79
+exclude = []
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "single"
