@@ -14,5 +14,4 @@ class TimerService:
     async def get_timers(self) -> list[Timer]:
         """Get a list of all systemd timers.
         """
-        await self._dbus_service.connect()
         return await self._dbus_service.list_timers()
