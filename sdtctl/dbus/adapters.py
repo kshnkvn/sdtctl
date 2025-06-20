@@ -1,4 +1,7 @@
+import logging
 from datetime import datetime
+
+from pydantic import ValidationError
 
 from sdtctl.dbus.constants import SystemdDBusConstants, UnitPropertyNames
 from sdtctl.dbus.interfaces import SystemdUnitParser, TimerFactory
@@ -10,6 +13,7 @@ from sdtctl.models.timer import Timer
 class SystemdUnitInfoFactory:
     """Factory for creating SystemdUnitInfo instances from SystemdUnit objects.
     """
+    _logger = logging.getLogger(__name__)
 
     @staticmethod
     async def create_from_systemd_unit(unit: SystemdUnit) -> SystemdUnitInfo:
@@ -42,21 +46,33 @@ class SystemdUnitInfoFactory:
         job_type = job_info[1] if len(job_info) > 1 else ''
         job_object_path = job_info[2] if len(job_info) > 2 else ''
 
-        return SystemdUnitInfo(
-            name=unit_name,
-            description=unit_properties.get(UnitPropertyNames.DESCRIPTION, ''),
-            load_state=unit_properties.get(UnitPropertyNames.LOAD_STATE, ''),
-            active_state=unit_properties.get(
-                UnitPropertyNames.ACTIVE_STATE,
-                '',
-            ),
-            sub_state=unit_properties.get(UnitPropertyNames.SUB_STATE, ''),
-            following=unit_properties.get(UnitPropertyNames.FOLLOWING, ''),
-            object_path=object_path,
-            job_id=job_id,
-            job_type=job_type,
-            job_object_path=job_object_path,
-        )
+        try:
+            return SystemdUnitInfo(
+                name=unit_name,
+                description=unit_properties.get(
+                    UnitPropertyNames.DESCRIPTION,
+                    '',
+                ),
+                load_state=unit_properties.get(
+                    UnitPropertyNames.LOAD_STATE,
+                    '',
+                ),
+                active_state=unit_properties.get(
+                    UnitPropertyNames.ACTIVE_STATE,
+                    '',
+                ),
+                sub_state=unit_properties.get(UnitPropertyNames.SUB_STATE, ''),
+                following=unit_properties.get(UnitPropertyNames.FOLLOWING, ''),
+                object_path=object_path,
+                job_id=job_id,
+                job_type=job_type,
+                job_object_path=job_object_path,
+            )
+        except ValidationError as e:
+            SystemdUnitInfoFactory._logger.error(
+                f'Invalid unit data for {unit_name}: {e}'
+            )
+            raise
 
 
 class DBusSystemdUnitParser(SystemdUnitParser):
@@ -71,18 +87,21 @@ class DBusSystemdUnitParser(SystemdUnitParser):
                 f'Expected 10 fields in unit data, got {len(unit_data)}'
             )
 
-        return SystemdUnitInfo(
-            name=unit_data[0],
-            description=unit_data[1],
-            load_state=unit_data[2],
-            active_state=unit_data[3],
-            sub_state=unit_data[4],
-            following=unit_data[5],
-            object_path=unit_data[6],
-            job_id=unit_data[7],
-            job_type=unit_data[8],
-            job_object_path=unit_data[9],
-        )
+        try:
+            return SystemdUnitInfo(
+                name=unit_data[0],
+                description=unit_data[1],
+                load_state=unit_data[2],
+                active_state=unit_data[3],
+                sub_state=unit_data[4],
+                following=unit_data[5],
+                object_path=unit_data[6],
+                job_id=unit_data[7],
+                job_type=unit_data[8],
+                job_object_path=unit_data[9],
+            )
+        except ValidationError as e:
+            raise ValueError(f'Invalid unit data: {e}')
 
 
 class DefaultTimerFactory(TimerFactory):
@@ -104,11 +123,14 @@ class DefaultTimerFactory(TimerFactory):
         """
         next_elapse = self._calculate_next_elapse(properties)
 
-        return Timer(
-            name=unit_info.name,
-            active_state=unit_info.active_state,
-            next_elapse=next_elapse,
-        )
+        try:
+            return Timer(
+                name=unit_info.name,
+                active_state=unit_info.active_state,
+                next_elapse=next_elapse,
+            )
+        except ValidationError as e:
+            raise ValueError(f'Invalid timer data for {unit_info.name}: {e}')
 
     def _calculate_next_elapse(
         self,

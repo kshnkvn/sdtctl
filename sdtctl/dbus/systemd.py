@@ -1,6 +1,7 @@
 import logging
 
 from dbus_next.errors import DBusError
+from pydantic import ValidationError
 
 from sdtctl.dbus.adapters import (
     DBusSystemdUnitParser,
@@ -161,10 +162,36 @@ class SystemdDBusService:
                 0,
             )
 
-            return TimerProperties(
-                next_elapse_realtime_usec=realtime_usec,
-                next_elapse_monotonic_usec=monotonic_usec,
+            # Extract optional properties if available
+            last_trigger = timer_properties.get(
+                TimerPropertyNames.LAST_TRIGGER_USEC,
+                None,
             )
+            result = timer_properties.get(
+                TimerPropertyNames.RESULT,
+                None,
+            )
+
+            try:
+                return TimerProperties(
+                    next_elapse_realtime_usec=realtime_usec,
+                    next_elapse_monotonic_usec=monotonic_usec,
+                    last_trigger_usec=last_trigger,
+                    result=result,
+                )
+            except ValidationError as e:
+                self._logger.warning(
+                    'Invalid timer properties for %s: %s',
+                    unit.object_path,
+                    e,
+                )
+                # Return fallback with zero values
+                return TimerProperties(
+                    next_elapse_realtime_usec=0,
+                    next_elapse_monotonic_usec=0,
+                    last_trigger_usec=None,
+                    result=None,
+                )
         except DBusError as e:
             self._logger.warning(
                 'Failed to extract D-Bus properties for %s: %s',
@@ -179,7 +206,16 @@ class SystemdDBusService:
                 exc_info=True,
             )
         # Return empty properties as fallback
-        return TimerProperties(
-            next_elapse_realtime_usec=0,
-            next_elapse_monotonic_usec=0,
-        )
+        try:
+            return TimerProperties(
+                next_elapse_realtime_usec=0,
+                next_elapse_monotonic_usec=0,
+                last_trigger_usec=None,
+                result=None,
+            )
+        except ValidationError as e:
+            self._logger.error(
+                'Failed to create fallback timer properties: %s',
+                e,
+            )
+            raise

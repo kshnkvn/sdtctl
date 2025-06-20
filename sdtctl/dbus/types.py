@@ -1,15 +1,15 @@
-from dataclasses import dataclass
 from typing import Any, Self
 
 from dbus_next.signature import Variant
+from pydantic import BaseModel, Field
 
 
-@dataclass(frozen=True)
-class DBusVariantValue:
+class DBusVariantValue(BaseModel):
     """Wrapper for D-Bus variant values.
     """
+    model_config = {'frozen': True, 'arbitrary_types_allowed': True}
 
-    value: Any
+    value: Any = Field(..., description='The wrapped D-Bus variant value')
 
     @classmethod
     def from_dbus_variant(cls, variant: Variant | Any | None) -> Self:

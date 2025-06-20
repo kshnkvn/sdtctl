@@ -1,12 +1,16 @@
-from dataclasses import dataclass
 from datetime import datetime
 
+from pydantic import BaseModel, Field
 
-@dataclass(frozen=True)
-class Timer:
-    """A dataclass to represent a systemd timer.
+
+class Timer(BaseModel):
+    """Represents a systemd timer.
     """
+    model_config = {'frozen': True}
 
-    name: str
-    active_state: str
-    next_elapse: datetime | None
+    name: str = Field(..., description='Timer unit name')
+    active_state: str = Field(..., description='Current active state')
+    next_elapse: datetime | None = Field(
+        None,
+        description='Next scheduled execution time',
+    )
