@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+from typing import Self
 
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import BusType
@@ -193,20 +194,20 @@ class DBusConnectionManager(metaclass=SingletonMeta):
         """
         # A lightweight call to check if the bus is responsive.
         introspection = await self._bus.introspect(  # type: ignore
-            DBusConstants.DBUS_SERVICE_NAME,
-            DBusConstants.DBUS_OBJECT_PATH,
+            DBusConstants.SERVICE_NAME,
+            DBusConstants.OBJECT_PATH,
         )
         proxy = self._bus.get_proxy_object(  # type: ignore
-            DBusConstants.DBUS_SERVICE_NAME,
-            DBusConstants.DBUS_OBJECT_PATH,
+            DBusConstants.SERVICE_NAME,
+            DBusConstants.OBJECT_PATH,
             introspection,
         )
-        interface = proxy.get_interface(DBusConstants.DBUS_INTERFACE)
+        interface = proxy.get_interface(DBusConstants.INTERFACE)
         await interface.call_get_id()  # type: ignore
         return True
 
     @classmethod
-    def get_instance(cls) -> 'DBusConnectionManager':
+    def get_instance(cls) -> Self:
         """Returns the singleton instance of DBusConnectionManager.
 
         Returns:

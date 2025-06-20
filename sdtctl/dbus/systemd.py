@@ -4,16 +4,17 @@ from dbus_next.errors import DBusError
 
 from sdtctl.dbus.adapters import (
     DBusSystemdUnitParser,
-    DBusTimerPropertiesExtractor,
     DefaultTimerFactory,
+    SystemdUnitInfoFactory,
 )
 from sdtctl.dbus.connection import DBusConnectionManager
-from sdtctl.dbus.constants import SystemdDBusConstants
+from sdtctl.dbus.constants import TimerPropertyNames
 from sdtctl.dbus.interfaces import (
     SystemdUnitParser,
     TimerFactory,
-    TimerPropertiesExtractor,
 )
+from sdtctl.dbus.manager import SystemdManager
+from sdtctl.dbus.unit import SystemdUnit
 from sdtctl.models.systemd_unit import TimerProperties
 from sdtctl.models.timer import Timer
 from sdtctl.system.providers import ProcSystemBootTimeProvider
@@ -28,28 +29,31 @@ class SystemdDBusService:
         self,
         unit_parser: SystemdUnitParser | None = None,
         timer_factory: TimerFactory | None = None,
-        properties_extractor: TimerPropertiesExtractor | None = None,
+        systemd_manager: SystemdManager | None = None,
     ) -> None:
         """Initialize the service with optional dependency injection.
+
+        Args:
+            unit_parser: Parser for systemd unit data
+            timer_factory: Factory for creating Timer instances
+            systemd_manager: SystemdManager instance for D-Bus operations
         """
         self._logger = logging.getLogger(__name__)
 
         self._unit_parser = unit_parser or DBusSystemdUnitParser()
         self._timer_factory = timer_factory
-        self._properties_extractor = properties_extractor
+        self._systemd_manager = systemd_manager
         self._is_initialized = False
-        self._dbus_manager = DBusConnectionManager.get_instance()
 
     async def _initialize_dependencies(self) -> None:
-        """Initialize dependencies that require a D-Bus connection.
+        """Initialize dependencies that require setup.
         """
         if self._is_initialized:
             return
 
-        bus = await self._dbus_manager.get_bus()
-
-        if not self._properties_extractor:
-            self._properties_extractor = DBusTimerPropertiesExtractor(bus)
+        if not self._systemd_manager:
+            dbus_manager = DBusConnectionManager.get_instance()
+            self._systemd_manager = SystemdManager(dbus_manager)
 
         if not self._timer_factory:
             time_converter = StandardTimeConverter()
@@ -63,16 +67,18 @@ class SystemdDBusService:
 
     async def list_timers(self) -> list[Timer]:
         """List all timer units.
+
+        Returns:
+            List of Timer instances
         """
         await self._initialize_dependencies()
 
         try:
-            raw_units = await self._fetch_raw_units()
-            timer_units = self._filter_timer_units(raw_units)
-
+            timer_units = await self._systemd_manager.get_timer_units()  # type: ignore
             timers = []
-            for unit_data in timer_units:
-                timer = await self._process_timer_unit(unit_data)
+
+            for unit in timer_units:
+                timer = await self._process_timer_unit(unit)
                 if timer:
                     timers.append(timer)
 
@@ -92,50 +98,40 @@ class SystemdDBusService:
             )
             return []
 
-    async def _fetch_raw_units(self) -> list:
-        """Fetch raw unit data from systemd manager.
-        """
-        bus = await self._dbus_manager.get_bus()
-        introspection = await bus.introspect(
-            SystemdDBusConstants.BUS_NAME,
-            SystemdDBusConstants.BUS_PATH
-        )
-        obj = bus.get_proxy_object(
-            SystemdDBusConstants.BUS_NAME,
-            SystemdDBusConstants.BUS_PATH,
-            introspection
-        )
-        manager = obj.get_interface(SystemdDBusConstants.MANAGER_INTERFACE)
-        return await manager.call_list_units()  # type: ignore
+    async def _process_timer_unit(self, unit: SystemdUnit) -> Timer | None:
+        """Process a SystemdUnit and return Timer instance.
 
-    def _filter_timer_units(self, raw_units: list) -> list:
-        """Filter units to include only timer units.
-        """
-        return [
-            unit for unit in raw_units
-            if unit[0].endswith(SystemdDBusConstants.TIMER_SUFFIX)
-        ]
+        Args:
+            unit: SystemdUnit instance to process
 
-    async def _process_timer_unit(self, unit_data: list) -> Timer | None:
-        """Process a single timer unit and return Timer instance.
+        Returns:
+            Timer instance or None if processing fails
         """
         try:
-            unit_info = self._unit_parser.parse_unit_list_entry(unit_data)
-            properties = await self._extract_timer_properties(
-                unit_info.object_path
+            # Create SystemdUnitInfo directly from the SystemdUnit
+            unit_info = await SystemdUnitInfoFactory\
+                .create_from_systemd_unit(unit)
+
+            # Extract timer properties
+            timer_properties = await self._extract_timer_properties(unit)
+
+            # Create Timer using the factory
+            return self._timer_factory.create_timer( # type: ignore
+                unit_info,
+                timer_properties,
             )
-            return self._timer_factory.create_timer(unit_info, properties)  # type: ignore
+
         except DBusError as e:
             self._logger.warning(
                 'D-Bus error while processing timer %s: %s',
-                unit_data[0],
+                unit.object_path,
                 e,
             )
             return None
         except Exception as e:
             self._logger.warning(
                 'Failed to process timer %s: %s',
-                unit_data[0],
+                unit.object_path,
                 e,
                 exc_info=True,
             )
@@ -143,29 +139,44 @@ class SystemdDBusService:
 
     async def _extract_timer_properties(
         self,
-        object_path: str,
+        unit: SystemdUnit,
     ) -> TimerProperties:
-        """Extract timer properties with error handling.
+        """Extract timer properties from a SystemdUnit.
+
+        Args:
+            unit: SystemdUnit instance to extract properties from
+
+        Returns:
+            TimerProperties instance
         """
         try:
-            if not self._properties_extractor:
-                # This should not happen if _initialize_dependencies was called
-                raise RuntimeError("Properties extractor not initialized.")
-            return await self._properties_extractor.extract_timer_properties(  # type: ignore
-                object_path
+            timer_properties = await unit.get_timer_properties()
+
+            realtime_usec = timer_properties.get(
+                TimerPropertyNames.NEXT_ELAPSE_REALTIME_USEC,
+                0,
+            )
+            monotonic_usec = timer_properties.get(
+                TimerPropertyNames.NEXT_ELAPSE_MONOTONIC_USEC,
+                0,
+            )
+
+            return TimerProperties(
+                next_elapse_realtime_usec=realtime_usec,
+                next_elapse_monotonic_usec=monotonic_usec,
             )
         except DBusError as e:
             self._logger.warning(
                 'Failed to extract D-Bus properties for %s: %s',
-                object_path,
+                unit.object_path,
                 e,
             )
         except Exception as e:
             self._logger.warning(
                 'An error occurred while extracting properties for %s: %s',
-                object_path,
+                unit.object_path,
                 e,
-                exc_info=True
+                exc_info=True,
             )
         # Return empty properties as fallback
         return TimerProperties(

@@ -1,15 +1,62 @@
 from datetime import datetime
 
-from dbus_next.aio.message_bus import MessageBus
-
-from sdtctl.dbus.interfaces import (
-    SystemdUnitParser,
-    TimerFactory,
-    TimerPropertiesExtractor,
-)
-from sdtctl.dbus.types import DBusVariantValue
+from sdtctl.dbus.constants import SystemdDBusConstants, UnitPropertyNames
+from sdtctl.dbus.interfaces import SystemdUnitParser, TimerFactory
+from sdtctl.dbus.unit import SystemdUnit
 from sdtctl.models.systemd_unit import SystemdUnitInfo, TimerProperties
 from sdtctl.models.timer import Timer
+
+
+class SystemdUnitInfoFactory:
+    """Factory for creating SystemdUnitInfo instances from SystemdUnit objects.
+    """
+
+    @staticmethod
+    async def create_from_systemd_unit(unit: SystemdUnit) -> SystemdUnitInfo:
+        """Create SystemdUnitInfo from a SystemdUnit instance.
+
+        Args:
+            unit: SystemdUnit instance to extract information from
+
+        Returns:
+            SystemdUnitInfo with actual unit properties
+
+        Raises:
+            DBusError: If D-Bus calls fail
+        """
+        # Get unit properties directly from the SystemdUnit
+        unit_properties = await unit.get_all_properties(
+            SystemdDBusConstants.UNIT_INTERFACE
+        )
+
+        # Extract unit name from object path (proper D-Bus object path parsing)
+        object_path = unit.object_path
+        unit_name = object_path.split('/')[-1]\
+            .replace('_2e', '.')\
+            .replace('_2d', '-')
+
+        # Extract job information
+        # Job property is a tuple: (job_id, job_type, job_object_path)
+        job_info = unit_properties.get(UnitPropertyNames.JOB, (0, '', ''))
+        job_id = job_info[0] if len(job_info) > 0 else 0
+        job_type = job_info[1] if len(job_info) > 1 else ''
+        job_object_path = job_info[2] if len(job_info) > 2 else ''
+
+        return SystemdUnitInfo(
+            name=unit_name,
+            description=unit_properties.get(UnitPropertyNames.DESCRIPTION, ''),
+            load_state=unit_properties.get(UnitPropertyNames.LOAD_STATE, ''),
+            active_state=unit_properties.get(
+                UnitPropertyNames.ACTIVE_STATE,
+                '',
+            ),
+            sub_state=unit_properties.get(UnitPropertyNames.SUB_STATE, ''),
+            following=unit_properties.get(UnitPropertyNames.FOLLOWING, ''),
+            object_path=object_path,
+            job_id=job_id,
+            job_type=job_type,
+            job_object_path=job_object_path,
+        )
 
 
 class DBusSystemdUnitParser(SystemdUnitParser):
@@ -35,56 +82,6 @@ class DBusSystemdUnitParser(SystemdUnitParser):
             job_id=unit_data[7],
             job_type=unit_data[8],
             job_object_path=unit_data[9],
-        )
-
-
-class DBusTimerPropertiesExtractor(TimerPropertiesExtractor):
-    """Extracts timer properties from D-Bus systemd objects.
-    """
-
-    _BUS_NAME = 'org.freedesktop.systemd1'
-    _TIMER_INTERFACE = 'org.freedesktop.systemd1.Timer'
-    _PROPERTIES_INTERFACE = 'org.freedesktop.DBus.Properties'
-
-    def __init__(self, bus: MessageBus) -> None:
-        """Initialize with D-Bus message bus.
-        """
-        self._bus = bus
-
-    async def extract_timer_properties(
-        self,
-        object_path: str,
-    ) -> TimerProperties:
-        """Extract timer properties from D-Bus object.
-        """
-        introspection = await self._bus.introspect(self._BUS_NAME, object_path)
-        timer_object = self._bus.get_proxy_object(
-            self._BUS_NAME,
-            object_path,
-            introspection,
-        )
-
-        timer_object.get_interface(self._TIMER_INTERFACE)
-        properties_interface = timer_object.get_interface(
-            self._PROPERTIES_INTERFACE
-        )
-        timer_properties = await properties_interface.call_get_all(  # type: ignore
-            self._TIMER_INTERFACE
-        )
-
-        realtime_variant = timer_properties.get('NextElapseUSecRealtime')
-        monotonic_variant = timer_properties.get('NextElapseUSecMonotonic')
-
-        realtime_usec = DBusVariantValue.from_dbus_variant(
-            realtime_variant
-        ).value
-        monotonic_usec = DBusVariantValue.from_dbus_variant(
-            monotonic_variant
-        ).value
-
-        return TimerProperties(
-            next_elapse_realtime_usec=realtime_usec,
-            next_elapse_monotonic_usec=monotonic_usec,
         )
 
 
