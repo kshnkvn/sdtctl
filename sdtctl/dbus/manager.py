@@ -371,7 +371,8 @@ class SystemdManager:
         await self._ensure_manager_proxy()
 
         try:
-            return await self._manager_proxy.call_get_unit_file_state(unit_name)  # type: ignore
+            return await \
+                self._manager_proxy.call_get_unit_file_state(unit_name)  # type: ignore
         except DBusError as e:
             self._logger.error(
                 'Failed to get unit file state for %s: %s',
