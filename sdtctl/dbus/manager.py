@@ -6,6 +6,7 @@ from dbus_next.errors import DBusError
 from sdtctl.dbus.connection import DBusConnectionManager
 from sdtctl.dbus.constants import SystemdDBusConstants, UnitControlModes
 from sdtctl.dbus.unit import SystemdUnit
+from sdtctl.models.creation_results import TimerInstallationResult
 
 
 class SystemdManager:
@@ -349,3 +350,69 @@ class SystemdManager:
                 timer_units.append(timer_unit)
 
         return timer_units
+
+    async def reload_unit_files(self, system_level: bool = True) -> None:
+        """Reload systemd unit files after changes.
+        """
+        await self._ensure_manager_proxy()
+
+        try:
+            await self._manager_proxy.call_reload()  # type: ignore
+        except DBusError as e:
+            self._logger.error(
+                'Failed to reload unit files: %s',
+                e,
+            )
+            raise
+
+    async def get_unit_file_state(self, unit_name: str) -> str:
+        """Get the current state of a unit file.
+        """
+        await self._ensure_manager_proxy()
+
+        try:
+            return await self._manager_proxy.call_get_unit_file_state(unit_name)  # type: ignore
+        except DBusError as e:
+            self._logger.error(
+                'Failed to get unit file state for %s: %s',
+                unit_name,
+                e,
+            )
+            raise
+
+    async def install_timer(
+        self,
+        timer_name: str,
+        system_level: bool = True
+    ) -> TimerInstallationResult:
+        """Install (enable and optionally start) a timer unit.
+        """
+        try:
+            # Enable the timer unit
+            timer_unit = f'{timer_name}.timer'
+            enable_result = await self.enable_unit_files([timer_unit])
+
+            # Reload daemon to pick up changes
+            await self.reload_unit_files(system_level)
+
+            # Get final state
+            state = await self.get_unit_file_state(timer_unit)
+
+            return TimerInstallationResult(
+                success=True,
+                timer_name=timer_name,
+                enabled=enable_result[0],
+                state=state,
+            )
+        except DBusError as e:
+            self._logger.error(
+                'Failed to install timer %s: %s',
+                timer_name,
+                e,
+            )
+            return TimerInstallationResult(
+                success=False,
+                timer_name=timer_name,
+                enabled=False,
+                error_message=str(e),
+            )

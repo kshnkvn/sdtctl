@@ -1,8 +1,14 @@
 from pydantic import ValidationError
 
 from sdtctl.dbus.systemd import SystemdDBusService
+from sdtctl.models.creation_results import (
+    PermissionResult,
+    TimerCreationResult,
+    UnitPreview,
+)
 from sdtctl.models.timer import Timer
 from sdtctl.models.timer_config import CreateTimerResult, TimerCreationConfig
+from sdtctl.system.unit_file_manager import SystemdDirectoryManager
 
 
 class TimerService:
@@ -125,3 +131,35 @@ class TimerService:
         """
         # TODO: Implement actual timer enabling
         pass
+
+    async def create_timer_interactive(
+        self,
+        config: TimerCreationConfig,
+        system_level: bool = True,
+    ) -> TimerCreationResult:
+        """Create a timer from configuration with full validation and setup.
+        """
+        return await self._dbus_service.create_timer(config, system_level)
+
+    async def preview_timer_creation(
+        self,
+        config: TimerCreationConfig,
+    ) -> UnitPreview:
+        """Generate preview of timer units without creating them.
+        """
+        return await self._dbus_service.preview_timer_units(config)
+
+    async def check_creation_permissions(
+        self,
+        system_level: bool,
+    ) -> PermissionResult:
+        """Check if current user has permissions to create timers.
+        """
+        dir_manager = SystemdDirectoryManager()
+        target_dir = (
+            dir_manager.get_system_unit_dir()
+            if system_level
+            else dir_manager.get_user_unit_dir()
+        )
+
+        return dir_manager.check_directory_permissions(target_dir)
