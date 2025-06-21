@@ -26,7 +26,7 @@ from sdtctl.systemd.types import (
     UnitFileState,
     UnitLoadState,
 )
-from sdtctl.time.converters import StandardTimeConverter
+from sdtctl.utils import StandardTimeConverter
 
 
 class SystemdTimerManager:
@@ -36,8 +36,10 @@ class SystemdTimerManager:
     """
 
     def __init__(self) -> None:
-        """Initialize the manager with required dependencies."""
+        """Initialize the manager with required dependencies.
+        """
         self._logger = logging.getLogger(__name__)
+
         self._connection = DBusConnectionManager.get_instance()
         self._file_manager = UnitFileManager()
         self._time_converter = StandardTimeConverter()
@@ -296,6 +298,69 @@ class SystemdTimerManager:
             service_path=service_path,
         )
 
+    async def is_timer_active(self, timer_name: str) -> bool:
+        """Check if a timer is currently active.
+
+        Args:
+            timer_name: Name of the timer to check
+
+        Returns:
+            True if timer is active, False otherwise
+        """
+        timers = await self.list_timers()
+        for timer in timers:
+            if timer.name == f'{timer_name}.timer':
+                return timer.active_state == UnitActiveState.ACTIVE
+        return False
+
+    async def start_timer_simple(self, timer_name: str) -> bool:
+        """Start a timer (simple boolean return).
+
+        Args:
+            timer_name: Name of the timer to start
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = await self.start_timer(timer_name)
+        return result.success
+
+    async def stop_timer_simple(self, timer_name: str) -> bool:
+        """Stop a timer (simple boolean return).
+
+        Args:
+            timer_name: Name of the timer to stop
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = await self.stop_timer(timer_name)
+        return result.success
+
+    async def enable_timer_simple(self, timer_name: str) -> bool:
+        """Enable a timer (simple boolean return).
+
+        Args:
+            timer_name: Name of the timer to enable
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = await self.enable_timer(timer_name)
+        return result.success
+
+    async def disable_timer_simple(self, timer_name: str) -> bool:
+        """Disable a timer (simple boolean return).
+
+        Args:
+            timer_name: Name of the timer to disable
+
+        Returns:
+            True if successful, False otherwise
+        """
+        result = await self.disable_timer(timer_name)
+        return result.success
+
     async def _ensure_manager_proxy(self) -> None:
         """Ensure the systemd manager proxy is initialized.
         """
@@ -328,18 +393,8 @@ class SystemdTimerManager:
         """Build TimerInfo from raw unit data.
         """
         try:
-            dbus_data = DBusUnitData(
-                name=unit_data[0],
-                description=unit_data[1],
-                load_state=unit_data[2],
-                active_state=unit_data[3],
-                sub_state=unit_data[4],
-                following=unit_data[5],
-                object_path=unit_data[6],
-                job_id=unit_data[7],
-                job_type=unit_data[8],
-                job_object_path=unit_data[9],
-            )
+            # Parse raw unit data into structured format
+            dbus_data = self._parse_unit_data(unit_data)
 
             # Get timer properties and file state
             timer_props = await self._get_timer_properties(
@@ -347,19 +402,11 @@ class SystemdTimerManager:
             )
             file_state = await self._get_unit_file_state(dbus_data.name)
 
-            # Convert timestamps
-            next_elapse = self._convert_next_elapse(timer_props)
-            last_trigger = self._convert_last_trigger(timer_props)
-
-            return TimerInfo(
-                name=dbus_data.name,
-                description=dbus_data.description,
-                active_state=UnitActiveState(dbus_data.active_state),
-                load_state=UnitLoadState(dbus_data.load_state),
-                file_state=UnitFileState(file_state),
-                next_elapse=next_elapse,
-                last_trigger=last_trigger,
-                object_path=dbus_data.object_path,
+            # Build and return timer info
+            return self._create_timer_info(
+                dbus_data,
+                timer_props,
+                file_state,
             )
 
         except Exception as e:
@@ -368,11 +415,66 @@ class SystemdTimerManager:
             )
             return None
 
+    def _parse_unit_data(self, unit_data: list[Any]) -> DBusUnitData:
+        """Parse raw unit data list into DBusUnitData.
+        """
+        return DBusUnitData(
+            name=unit_data[0],
+            description=unit_data[1],
+            load_state=unit_data[2],
+            active_state=unit_data[3],
+            sub_state=unit_data[4],
+            following=unit_data[5],
+            object_path=unit_data[6],
+            job_id=unit_data[7],
+            job_type=unit_data[8],
+            job_object_path=unit_data[9],
+        )
+
+    def _create_timer_info(
+        self,
+        dbus_data: DBusUnitData,
+        timer_props: DBusTimerProperties,
+        file_state: str,
+    ) -> TimerInfo:
+        """Create TimerInfo from DBus data and properties.
+        """
+        # Convert timestamps
+        next_elapse = self._convert_next_elapse(timer_props)
+        last_trigger = self._convert_last_trigger(timer_props)
+
+        return TimerInfo(
+            name=dbus_data.name,
+            description=dbus_data.description,
+            active_state=UnitActiveState(dbus_data.active_state),
+            load_state=UnitLoadState(dbus_data.load_state),
+            file_state=UnitFileState(file_state),
+            next_elapse=next_elapse,
+            last_trigger=last_trigger,
+            object_path=dbus_data.object_path,
+        )
+
     async def _get_timer_properties(
         self,
         object_path: str,
     ) -> DBusTimerProperties:
         """Get timer properties from D-Bus.
+        """
+        # Get properties interface for the timer
+        properties_interface = await self._get_properties_interface(
+            object_path
+        )
+
+        # Fetch raw properties from D-Bus
+        raw_props = await properties_interface.call_get_all( # type: ignore
+            SystemdDBusConstants.TIMER_INTERFACE
+        )
+
+        # Convert and return as structured data
+        return self._convert_raw_properties_to_timer_properties(raw_props)
+
+    async def _get_properties_interface(self, object_path: str):
+        """Get D-Bus properties interface for given object path.
         """
         bus = await self._connection.get_bus()
         introspection = await bus.introspect(
@@ -384,14 +486,16 @@ class SystemdTimerManager:
             object_path,
             introspection,
         )
-        properties_interface = proxy_object.get_interface(
+        return proxy_object.get_interface(
             DBusConstants.PROPERTIES_INTERFACE
         )
 
-        raw_props = await properties_interface.call_get_all( # type: ignore
-            SystemdDBusConstants.TIMER_INTERFACE
-        )
-
+    def _convert_raw_properties_to_timer_properties(
+        self,
+        raw_props: dict[str, Any],
+    ) -> DBusTimerProperties:
+        """Convert raw D-Bus properties to DBusTimerProperties.
+        """
         # Convert variants to Python values
         props = {}
         for name, variant in raw_props.items():
@@ -470,20 +574,11 @@ class SystemdTimerManager:
             await self._ensure_manager_proxy()
             unit_name = f'{timer_name}.timer'
 
-            if operation == TimerOperation.START:
-                job_path = await self._manager_proxy.call_start_unit(  # type: ignore
-                    unit_name, UnitControlModes.REPLACE
-                )
-            elif operation == TimerOperation.STOP:
-                job_path = await self._manager_proxy.call_stop_unit(  # type: ignore
-                    unit_name, UnitControlModes.REPLACE
-                )
-            elif operation == TimerOperation.RESTART:
-                job_path = await self._manager_proxy.call_restart_unit(  # type: ignore
-                    unit_name, UnitControlModes.REPLACE
-                )
-            else:
-                raise ValueError(f'Unsupported operation: {operation}')
+            # Execute the operation
+            job_path = await self._execute_timer_operation(
+                unit_name,
+                operation,
+            )
 
             return TimerOperationResult(
                 success=True,
@@ -504,6 +599,31 @@ class SystemdTimerManager:
                 message=str(e),
                 job_path='',
             )
+
+    async def _execute_timer_operation(
+        self,
+        unit_name: str,
+        operation: TimerOperation,
+    ) -> str:
+        """Execute specific timer operation via D-Bus.
+        """
+        if operation == TimerOperation.START:
+            return await self._manager_proxy.call_start_unit(  # type: ignore
+                unit_name,
+                UnitControlModes.REPLACE,
+            )
+        elif operation == TimerOperation.STOP:
+            return await self._manager_proxy.call_stop_unit(  # type: ignore
+                unit_name,
+                UnitControlModes.REPLACE,
+            )
+        elif operation == TimerOperation.RESTART:
+            return await self._manager_proxy.call_restart_unit(  # type: ignore
+                unit_name,
+                UnitControlModes.REPLACE,
+            )
+        else:
+            raise ValueError(f'Unsupported operation: {operation}')
 
     async def _stop_timer(self, timer_name: str) -> None:
         """Stop timer (internal helper).
@@ -556,61 +676,169 @@ class SystemdTimerManager:
     def _generate_timer_unit(self, request: TimerCreationRequest) -> str:
         """Generate timer unit file content.
         """
-        lines = [
+        lines = []
+
+        # Add unit section
+        lines.extend(self._generate_timer_unit_section(request))
+
+        # Add timer section with specifications
+        lines.extend(self._generate_timer_section(request))
+
+        # Add install section
+        lines.extend(self._generate_timer_install_section())
+
+        return '\n'.join(lines)
+
+    def _generate_timer_unit_section(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Generate [Unit] section for timer.
+        """
+        return [
             '[Unit]',
             f'Description={request.description}',
             f'Documentation=Timer for {request.name}',
             '',
-            '[Timer]',
         ]
 
+    def _generate_timer_section(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Generate [Timer] section with specifications.
+        """
+        lines = ['[Timer]']
+
         # Add timer specifications
+        timer_specs = self._get_timer_specifications(request)
+        lines.extend(timer_specs)
+
+        # Add timer behavior options
+        behavior_options = self._get_timer_behavior_options(request)
+        lines.extend(behavior_options)
+
+        return lines
+
+    def _get_timer_specifications(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Get timer schedule specifications.
+        """
+        specs = []
+
         if request.calendar_spec:
-            lines.append(f'OnCalendar={request.calendar_spec}')
+            specs.append(f'OnCalendar={request.calendar_spec}')
         if request.on_boot_sec is not None:
-            lines.append(f'OnBootSec={request.on_boot_sec}')
+            specs.append(f'OnBootSec={request.on_boot_sec}')
         if request.on_startup_sec is not None:
-            lines.append(f'OnStartupSec={request.on_startup_sec}')
+            specs.append(f'OnStartupSec={request.on_startup_sec}')
         if request.on_unit_active_sec is not None:
-            lines.append(f'OnUnitActiveSec={request.on_unit_active_sec}')
+            specs.append(f'OnUnitActiveSec={request.on_unit_active_sec}')
         if request.on_unit_inactive_sec is not None:
-            lines.append(f'OnUnitInactiveSec={request.on_unit_inactive_sec}')
+            specs.append(f'OnUnitInactiveSec={request.on_unit_inactive_sec}')
 
-        # Timer behavior options
+        return specs
+
+    def _get_timer_behavior_options(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Get timer behavior options.
+        """
+        options = []
+
         if request.accuracy_sec != 60:
-            lines.append(f'AccuracySec={request.accuracy_sec}')
+            options.append(f'AccuracySec={request.accuracy_sec}')
         if request.randomized_delay_sec > 0:
-            lines.append(f'RandomizedDelaySec={request.randomized_delay_sec}')
+            options.append(f'RandomizedDelaySec={request.randomized_delay_sec}')
         if request.persistent:
-            lines.append('Persistent=true')
+            options.append('Persistent=true')
         if request.wake_system:
-            lines.append('WakeSystem=true')
+            options.append('WakeSystem=true')
 
-        lines.extend(['', '[Install]', 'WantedBy=timers.target', ''])
+        return options
 
-        return '\n'.join(lines)
+    def _generate_timer_install_section(self) -> list[str]:
+        """Generate [Install] section for timer.
+        """
+        return ['', '[Install]', 'WantedBy=timers.target', '']
 
     def _generate_service_unit(self, request: TimerCreationRequest) -> str:
         """Generate service unit file content.
         """
-        lines = [
+        lines = []
+
+        # Add unit section
+        lines.extend(self._generate_service_unit_section(request))
+
+        # Add service section
+        lines.extend(self._generate_service_section(request))
+
+        lines.append('')
+
+        return '\n'.join(lines)
+
+    def _generate_service_unit_section(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Generate [Unit] section for service.
+        """
+        return [
             '[Unit]',
             f'Description=Service for {request.description}',
             f'Documentation=Service unit for {request.name} timer',
             '',
+        ]
+
+    def _generate_service_section(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Generate [Service] section with configuration.
+        """
+        lines = [
             '[Service]',
             'Type=oneshot',
             f'ExecStart={request.command}',
         ]
 
+        # Add service execution context
+        context_options = self._get_service_context_options(request)
+        lines.extend(context_options)
+
+        # Add environment variables
+        env_lines = self._get_service_environment_lines(request)
+        lines.extend(env_lines)
+
+        return lines
+
+    def _get_service_context_options(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Get service execution context options.
+        """
+        options = []
+
         if request.user:
-            lines.append(f'User={request.user}')
+            options.append(f'User={request.user}')
         if request.working_directory:
-            lines.append(f'WorkingDirectory={request.working_directory}')
+            options.append(f'WorkingDirectory={request.working_directory}')
+
+        return options
+
+    def _get_service_environment_lines(
+        self,
+        request: TimerCreationRequest,
+    ) -> list[str]:
+        """Get environment variable lines for service.
+        """
+        lines = []
 
         for key, value in request.environment.items():
             lines.append(f'Environment="{key}={value}"')
 
-        lines.append('')
-
-        return '\n'.join(lines)
+        return lines

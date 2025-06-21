@@ -111,21 +111,23 @@ class UnitFileManager:
         """Write timer and service unit files to appropriate directory.
         """
         try:
-            timer_name = self._ensure_suffix(config.name, '.timer')
-            service_name = self._ensure_suffix(
-                config.name.removesuffix('.timer'),
-                '.service',
-            )
-
-            timer_path = await self.get_unit_file_path(
-                timer_name,
-                system_level,
-            )
-            service_path = await self.get_unit_file_path(
-                service_name,
+            # Prepare file paths
+            paths = await self._prepare_unit_file_paths(
+                config.name,
                 system_level,
             )
 
+            # Extract paths with proper type checking
+            timer_path = paths['timer']
+            service_path = paths['service']
+
+            if not isinstance(timer_path, Path) \
+                or not isinstance(service_path, Path):
+                raise ValueError(
+                    'Invalid path types returned from preparation'
+                )
+
+            # Validate permissions
             target_dir = timer_path.parent
             permission_result = \
                 await self.validate_write_permissions(target_dir)
@@ -135,51 +137,29 @@ class UnitFileManager:
                     error_message=permission_result.error_message,
                 )
 
-            # Backup existing files if they exist
-            backup_paths = []
-            if await self.check_unit_file_exists(timer_name, system_level):
-                backup_path = await self.backup_existing_unit(timer_path)
-                backup_paths.append(backup_path)
-
-            if await self.check_unit_file_exists(service_name, system_level):
-                backup_path = await self.backup_existing_unit(service_path)
-                backup_paths.append(backup_path)
+            # Backup existing files
+            backup_paths = await self._backup_existing_files(
+                paths,
+                system_level,
+            )
 
             # Ensure target directory exists
             self._dir_manager.ensure_directory_exists(target_dir)
 
-            # Write files atomically (write to temp files first)
-            timer_temp = timer_path.with_suffix('.timer.tmp')
-            service_temp = service_path.with_suffix('.service.tmp')
+            # Write files atomically
+            await self._write_files_atomically(
+                timer_path,
+                timer_content,
+                service_path,
+                service_content,
+            )
 
-            try:
-                # Write timer file
-                timer_temp.write_text(timer_content, encoding='utf-8')
-
-                # Write service file
-                service_temp.write_text(service_content, encoding='utf-8')
-
-                # Atomic move
-                timer_temp.rename(timer_path)
-                service_temp.rename(service_path)
-
-                # Set appropriate permissions
-                timer_path.chmod(0o644)
-                service_path.chmod(0o644)
-
-                return UnitFileWriteResult(
-                    success=True,
-                    timer_path=timer_path,
-                    service_path=service_path,
-                    backup_paths=backup_paths if backup_paths else None,
-                )
-
-            except Exception as e:
-                # Clean up temp files on error
-                for temp_file in [timer_temp, service_temp]:
-                    if temp_file.exists():
-                        temp_file.unlink()
-                raise e
+            return UnitFileWriteResult(
+                success=True,
+                timer_path=timer_path,
+                service_path=service_path,
+                backup_paths=backup_paths if backup_paths else None,
+            )
 
         except Exception as e:
             self._logger.error(
@@ -192,6 +172,101 @@ class UnitFileManager:
                 success=False,
                 error_message=str(e),
             )
+
+    async def _prepare_unit_file_paths(
+        self,
+        timer_name: str,
+        system_level: bool,
+    ) -> dict[str, Path | str]:
+        """Prepare timer and service file paths.
+        """
+        timer_name = self._ensure_suffix(timer_name, '.timer')
+        service_name = self._ensure_suffix(
+            timer_name.removesuffix('.timer'),
+            '.service',
+        )
+
+        timer_path = await self.get_unit_file_path(
+            timer_name,
+            system_level,
+        )
+        service_path = await self.get_unit_file_path(
+            service_name,
+            system_level,
+        )
+
+        return {
+            'timer': timer_path,
+            'service': service_path,
+            'timer_name': timer_name,
+            'service_name': service_name,
+        }
+
+    async def _backup_existing_files(
+        self,
+        paths: dict[str, Path | str],
+        system_level: bool,
+    ) -> list[Path]:
+        """Backup existing unit files if they exist.
+        """
+        backup_paths = []
+
+        timer_name = paths.get('timer_name')
+        service_name = paths.get('service_name')
+        timer_path = paths.get('timer')
+        service_path = paths.get('service')
+
+        if (timer_name and isinstance(timer_path, Path) and
+            await self.check_unit_file_exists(str(timer_name), system_level)):
+            backup_path = await self.backup_existing_unit(timer_path)
+            backup_paths.append(backup_path)
+
+        if (service_name and isinstance(service_path, Path) and
+            await self.check_unit_file_exists(
+                str(service_name),
+                system_level,
+            )):
+            backup_path = await self.backup_existing_unit(service_path)
+            backup_paths.append(backup_path)
+
+        return backup_paths
+
+    async def _write_files_atomically(
+        self,
+        timer_path: Path,
+        timer_content: str,
+        service_path: Path,
+        service_content: str,
+    ) -> None:
+        """Write files atomically using temporary files.
+        """
+        timer_temp = timer_path.with_suffix('.timer.tmp')
+        service_temp = service_path.with_suffix('.service.tmp')
+
+        try:
+            # Write to temporary files
+            timer_temp.write_text(timer_content, encoding='utf-8')
+            service_temp.write_text(service_content, encoding='utf-8')
+
+            # Atomic rename
+            timer_temp.rename(timer_path)
+            service_temp.rename(service_path)
+
+            # Set permissions
+            timer_path.chmod(0o644)
+            service_path.chmod(0o644)
+
+        except Exception as e:
+            # Clean up temp files on error
+            self._cleanup_temp_files([timer_temp, service_temp])
+            raise e
+
+    def _cleanup_temp_files(self, temp_files: list[Path]) -> None:
+        """Clean up temporary files.
+        """
+        for temp_file in temp_files:
+            if temp_file.exists():
+                temp_file.unlink()
 
     async def get_unit_file_path(
         self,

@@ -155,22 +155,3 @@ class TimerCreationConfig(BaseModel):
             raise ValueError('Timer name cannot start or end with a dot')
 
         return v
-
-
-class CreateTimerResult(BaseModel):
-    """Result of timer creation operation.
-
-    Args:
-        success: Whether the timer was created successfully
-        timer_name: Name of the created timer
-        service_name: Name of the created service
-        message: Success or error message
-        enabled: Whether the timer was enabled after creation
-    """
-    model_config = {'frozen': True}
-
-    success: bool = Field(...)
-    timer_name: str = Field(...)
-    service_name: str = Field(...)
-    message: str = Field(...)
-    enabled: bool = Field(False)

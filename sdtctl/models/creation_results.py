@@ -28,22 +28,6 @@ class TimerCreationResult(BaseModel):
     warnings: list[str] | None = None
 
 
-class UnitPreview(BaseModel):
-    """Preview of generated unit files.
-
-    Args:
-        timer_content: Content of the timer unit file
-        service_content: Content of the service unit file
-        timer_path: Path where the timer file will be created
-        service_path: Path where the service file will be created
-    """
-    model_config = {'frozen': True}
-
-    timer_content: str
-    service_content: str
-    timer_path: Path
-    service_path: Path
-
 
 class PermissionResult(BaseModel):
     """Result of permission check.
@@ -76,23 +60,4 @@ class UnitFileWriteResult(BaseModel):
     timer_path: Path | None = None
     service_path: Path | None = None
     backup_paths: list[Path] | None = None
-    error_message: str | None = None
-
-
-class TimerInstallationResult(BaseModel):
-    """Result of timer installation via systemd.
-
-    Args:
-        success: Whether the installation was successful
-        timer_name: Name of the installed timer
-        enabled: Whether the timer was enabled
-        state: Current state of the timer
-        error_message: Error message if installation failed
-    """
-    model_config = {'frozen': True}
-
-    success: bool
-    timer_name: str
-    enabled: bool
-    state: str | None = None
     error_message: str | None = None

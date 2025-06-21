@@ -1,5 +1,4 @@
 from sdtctl.models.timer_config import (
-    CreateTimerResult,
     RestartPolicy,
     ServiceConfig,
     ServiceType,
@@ -13,5 +12,4 @@ __all__ = [
     'TimerSchedule',
     'ServiceConfig',
     'TimerCreationConfig',
-    'CreateTimerResult',
 ]
