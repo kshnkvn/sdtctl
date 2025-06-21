@@ -4,6 +4,7 @@ from typing import Any
 
 from dbus_next.errors import DBusError
 
+from sdtctl.system.providers import ProcSystemBootTimeProvider
 from sdtctl.system.unit_file_manager import UnitFileManager
 from sdtctl.systemd.connection import DBusConnectionManager
 from sdtctl.systemd.models import (
@@ -43,6 +44,8 @@ class SystemdTimerManager:
         self._connection = DBusConnectionManager.get_instance()
         self._file_manager = UnitFileManager()
         self._time_converter = StandardTimeConverter()
+        self._boot_provider = ProcSystemBootTimeProvider()
+        self._boot_info = None
         self._manager_proxy = None
 
     async def list_timers(self) -> list[TimerInfo]:
@@ -545,11 +548,34 @@ class SystemdTimerManager:
     ) -> datetime | None:
         """Convert next elapse time to datetime.
         """
+        # Try realtime first
         if props.next_elapse_realtime_usec > 0:
             return self._time_converter.convert_realtime_to_datetime(
                 props.next_elapse_realtime_usec
             )
+
+        # Fall back to monotonic time if available
+        if props.next_elapse_monotonic_usec > 0:
+            return self._convert_monotonic_time(
+                props.next_elapse_monotonic_usec
+            )
+
         return None
+
+    def _convert_monotonic_time(self, monotonic_usec: int) -> datetime | None:
+        """Convert monotonic time to datetime using system boot info.
+        """
+        try:
+            # Get boot info if not cached
+            if self._boot_info is None:
+                self._boot_info = self._boot_provider.get_boot_time()
+
+            return self._time_converter.convert_monotonic_to_datetime(
+                monotonic_usec, self._boot_info
+            )
+        except Exception as e:
+            self._logger.warning(f'Failed to convert monotonic time: {e}')
+            return None
 
     def _convert_last_trigger(
         self,
