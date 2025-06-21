@@ -134,7 +134,8 @@ class TimerService:
             on_unit_active_sec=schedule.on_unit_active_sec,
             on_unit_inactive_sec=schedule.on_unit_inactive_sec,
             user=service.user,
-            working_directory=service.working_directory,
+            working_directory=str(service.working_directory) \
+                if service.working_directory else None,
             environment=service.environment or {},
             persistent=schedule.persistent,
             wake_system=schedule.wake_system,
@@ -253,7 +254,11 @@ class TimerService:
         result = await self._manager.disable_timer(timer_name)
         return result.success
 
-    async def delete_timer(self, timer_name: str, system_level: bool = True) -> bool:
+    async def delete_timer(
+        self,
+        timer_name: str,
+        system_level: bool = True,
+    ) -> bool:
         """Delete a timer.
 
         Args:

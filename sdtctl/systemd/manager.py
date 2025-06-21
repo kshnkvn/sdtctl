@@ -110,6 +110,7 @@ class SystemdTimerManager:
                 timer_path=timer_path,
                 service_path=service_path,
                 enabled=enabled,
+                error_message='',
             )
 
         except Exception as e:
@@ -117,6 +118,9 @@ class SystemdTimerManager:
             return TimerCreationResult(
                 success=False,
                 timer_name=request.name,
+                timer_path=None,
+                service_path=None,
+                enabled=False,
                 error_message=str(e),
             )
 
@@ -157,6 +161,7 @@ class SystemdTimerManager:
                 timer_name=timer_name,
                 operation=TimerOperation.DELETE,
                 message=f'Timer {timer_name} deleted successfully',
+                job_path='',
             )
 
         except Exception as e:
@@ -166,6 +171,7 @@ class SystemdTimerManager:
                 timer_name=timer_name,
                 operation=TimerOperation.DELETE,
                 message=str(e),
+                job_path='',
             )
 
     async def start_timer(self, timer_name: str) -> TimerOperationResult:
@@ -216,7 +222,9 @@ class SystemdTimerManager:
                 success=enabled,
                 timer_name=timer_name,
                 operation=TimerOperation.ENABLE,
-                message=f'Timer {timer_name} enabled' if enabled else 'Failed to enable timer',
+                message=f'Timer {timer_name} enabled' \
+                    if enabled else 'Failed to enable timer',
+                job_path='',
             )
         except Exception as e:
             self._logger.error(f'Failed to enable timer {timer_name}: {e}')
@@ -225,6 +233,7 @@ class SystemdTimerManager:
                 timer_name=timer_name,
                 operation=TimerOperation.ENABLE,
                 message=str(e),
+                job_path='',
             )
 
     async def disable_timer(self, timer_name: str) -> TimerOperationResult:
@@ -242,7 +251,9 @@ class SystemdTimerManager:
                 success=disabled,
                 timer_name=timer_name,
                 operation=TimerOperation.DISABLE,
-                message=f'Timer {timer_name} disabled' if disabled else 'Failed to disable timer',
+                message=f'Timer {timer_name} disabled' \
+                    if disabled else 'Failed to disable timer',
+                job_path='',
             )
         except Exception as e:
             self._logger.error(f'Failed to disable timer {timer_name}: {e}')
@@ -251,6 +262,7 @@ class SystemdTimerManager:
                 timer_name=timer_name,
                 operation=TimerOperation.DISABLE,
                 message=str(e),
+                job_path='',
             )
 
     async def preview_timer(
@@ -490,6 +502,7 @@ class SystemdTimerManager:
                 timer_name=timer_name,
                 operation=operation,
                 message=str(e),
+                job_path='',
             )
 
     async def _stop_timer(self, timer_name: str) -> None:
