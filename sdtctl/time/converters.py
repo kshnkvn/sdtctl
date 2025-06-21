@@ -1,10 +1,9 @@
 from datetime import datetime
 
-from sdtctl.dbus.interfaces import TimeConverter
 from sdtctl.models.system import SystemBootInfo
 
 
-class StandardTimeConverter(TimeConverter):
+class StandardTimeConverter:
     """Standard implementation of time conversion operations.
     """
 

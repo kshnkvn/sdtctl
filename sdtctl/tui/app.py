@@ -1,6 +1,6 @@
 from textual.app import App
 
-from sdtctl.dbus.connection import DBusConnectionManager
+from sdtctl.systemd.connection import DBusConnectionManager
 from sdtctl.tui.screens.timer_list import TimerListScreen
 
 

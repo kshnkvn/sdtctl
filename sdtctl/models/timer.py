@@ -1,16 +1,20 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from sdtctl.utils import BaseModel
 
 
 class Timer(BaseModel):
-    """Represents a systemd timer.
+    """Systemd timer.
+
+    Args:
+        name: Timer unit name
+        active_state: Current active state
+        next_elapse: Next scheduled execution time
     """
     model_config = {'frozen': True}
 
-    name: str = Field(..., description='Timer unit name')
-    active_state: str = Field(..., description='Current active state')
-    next_elapse: datetime | None = Field(
-        None,
-        description='Next scheduled execution time',
-    )
+    name: str = Field(...)
+    active_state: str = Field(...)
+    next_elapse: datetime | None = Field(None)

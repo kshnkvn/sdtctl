@@ -1,7 +1,7 @@
 import asyncio
 
 from sdtctl.config import setup_logger
-from sdtctl.dbus.connection import DBusConnectionManager
+from sdtctl.systemd.connection import DBusConnectionManager
 from sdtctl.tui.app import SdtctlApp
 
 

@@ -3,7 +3,9 @@ import shlex
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
+
+from sdtctl.utils import BaseModel
 
 
 class ServiceType(StrEnum):
@@ -27,61 +29,32 @@ class RestartPolicy(StrEnum):
 
 
 class TimerSchedule(BaseModel):
-    """Represents a timer schedule configuration.
+    """Timer schedule configuration.
+
+    Args:
+        calendar_spec: Calendar specification (e.g., "daily", "00:30:00")
+        on_boot_sec: Seconds after boot
+        on_startup_sec: Seconds after startup
+        on_unit_active_sec: Seconds after unit becomes active
+        on_unit_inactive_sec: Seconds after unit becomes inactive
+        accuracy_sec: Timer accuracy in seconds
+        randomized_delay_sec: Random delay in seconds
+        persistent: Timer persists across reboots
+        wake_system: Timer can wake system from sleep
+        remain_after_elapse: Timer remains after elapsing
     """
     model_config = {'frozen': True}
 
-    # Calendar-based schedules (OnCalendar)
-    calendar_spec: str | None = Field(
-        None,
-        description='Calendar specification (e.g., "daily", "00:30:00")',
-    )
-
-    # Monotonic schedules
-    on_boot_sec: int | None = Field(
-        None,
-        ge=0,
-        description='Seconds after boot',
-    )
-    on_startup_sec: int | None = Field(
-        None,
-        ge=0,
-        description='Seconds after startup',
-    )
-    on_unit_active_sec: int | None = Field(
-        None,
-        ge=0,
-        description='Seconds after unit becomes active',
-    )
-    on_unit_inactive_sec: int | None = Field(
-        None,
-        ge=0,
-        description='Seconds after unit becomes inactive',
-    )
-
-    # Timer behavior
-    accuracy_sec: int = Field(
-        60,
-        ge=0,
-        description='Timer accuracy in seconds',
-    )
-    randomized_delay_sec: int = Field(
-        0,
-        ge=0,
-        description='Random delay in seconds',
-    )
-    persistent: bool = Field(
-        False,
-        description='Timer persists across reboots',
-    )
-    wake_system: bool = Field(
-        False,
-        description='Timer can wake system from sleep',
-    )
-    remain_after_elapse: bool = Field(
-        True,
-        description='Timer remains after elapsing',
-    )
+    calendar_spec: str | None = Field(None)
+    on_boot_sec: int | None = Field(None, ge=0)
+    on_startup_sec: int | None = Field(None, ge=0)
+    on_unit_active_sec: int | None = Field(None, ge=0)
+    on_unit_inactive_sec: int | None = Field(None, ge=0)
+    accuracy_sec: int = Field(60, ge=0)
+    randomized_delay_sec: int = Field(0, ge=0)
+    persistent: bool = Field(False)
+    wake_system: bool = Field(False)
+    remain_after_elapse: bool = Field(True)
 
     @field_validator('calendar_spec')
     @classmethod
@@ -110,38 +83,25 @@ class TimerSchedule(BaseModel):
 
 class ServiceConfig(BaseModel):
     """Configuration for the service unit that the timer triggers.
+
+    Args:
+        exec_start: Command to execute
+        user: User to run service as
+        group: Group to run service as
+        working_directory: Working directory
+        environment: Environment variables
+        type: Service type
+        restart: Restart policy
     """
     model_config = {'frozen': True}
 
-    exec_start: str = Field(
-        ...,
-        min_length=1,
-        description='Command to execute',
-    )
-    user: str | None = Field(
-        None,
-        description='User to run service as',
-    )
-    group: str | None = Field(
-        None,
-        description='Group to run service as',
-    )
-    working_directory: Path | None = Field(
-        None,
-        description='Working directory',
-    )
-    environment: dict[str, str] | None = Field(
-        None,
-        description='Environment variables',
-    )
-    type: ServiceType = Field(
-        ServiceType.ONESHOT,
-        description='Service type',
-    )
-    restart: RestartPolicy = Field(
-        RestartPolicy.NO,
-        description='Restart policy',
-    )
+    exec_start: str = Field(..., min_length=1)
+    user: str | None = Field(None)
+    group: str | None = Field(None)
+    working_directory: Path | None = Field(None)
+    environment: dict[str, str] | None = Field(None)
+    type: ServiceType = Field(ServiceType.ONESHOT)
+    restart: RestartPolicy = Field(RestartPolicy.NO)
 
     @field_validator('exec_start')
     @classmethod
@@ -162,26 +122,21 @@ class ServiceConfig(BaseModel):
 
 class TimerCreationConfig(BaseModel):
     """Complete configuration for creating a new timer.
+
+    Args:
+        name: Timer name
+        description: Timer description
+        timer_schedule: Timer schedule configuration
+        service_config: Service configuration
+        enabled: Enable timer after creation
     """
     model_config = {'frozen': True}
 
-    name: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
-        description='Timer name',
-    )
-    description: str = Field(
-        ...,
-        min_length=1,
-        description='Timer description',
-    )
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
     timer_schedule: TimerSchedule
     service_config: ServiceConfig
-    enabled: bool = Field(
-        True,
-        description='Enable timer after creation',
-    )
+    enabled: bool = Field(True)
 
     @field_validator('name')
     @classmethod
@@ -204,26 +159,18 @@ class TimerCreationConfig(BaseModel):
 
 class CreateTimerResult(BaseModel):
     """Result of timer creation operation.
+
+    Args:
+        success: Whether the timer was created successfully
+        timer_name: Name of the created timer
+        service_name: Name of the created service
+        message: Success or error message
+        enabled: Whether the timer was enabled after creation
     """
     model_config = {'frozen': True}
 
-    success: bool = Field(
-        ...,
-        description='Whether the timer was created successfully',
-    )
-    timer_name: str = Field(
-        ...,
-        description='Name of the created timer',
-    )
-    service_name: str = Field(
-        ...,
-        description='Name of the created service',
-    )
-    message: str = Field(
-        ...,
-        description='Success or error message',
-    )
-    enabled: bool = Field(
-        False,
-        description='Whether the timer was enabled after creation',
-    )
+    success: bool = Field(...)
+    timer_name: str = Field(...)
+    service_name: str = Field(...)
+    message: str = Field(...)
+    enabled: bool = Field(False)

@@ -1,8 +1,7 @@
-from sdtctl.dbus.interfaces import SystemBootTimeProvider
 from sdtctl.models.system import SystemBootInfo
 
 
-class ProcSystemBootTimeProvider(SystemBootTimeProvider):
+class ProcSystemBootTimeProvider:
     """System boot time provider using /proc filesystem.
     """
 

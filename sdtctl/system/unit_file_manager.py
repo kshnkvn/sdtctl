@@ -327,3 +327,87 @@ class UnitFileManager:
         """Ensure name has the specified suffix.
         """
         return name if name.endswith(suffix) else f'{name}{suffix}'
+
+    async def write_unit_file(
+        self,
+        unit_name: str,
+        content: str,
+        system_level: bool,
+    ) -> Path:
+        """Write a single unit file.
+
+        Args:
+            unit_name: Name of the unit file (e.g., 'my-timer.timer')
+            content: Content of the unit file
+            system_level: Whether to write to system or user level
+
+        Returns:
+            Path to the written unit file
+
+        Raises:
+            Exception: If writing fails
+        """
+        unit_path = await self.get_unit_file_path(unit_name, system_level)
+        target_dir = unit_path.parent
+
+        # Validate permissions
+        permission_result = await self.validate_write_permissions(target_dir)
+        if not permission_result.has_permission:
+            raise Exception(permission_result.error_message)
+
+        # Backup existing file if it exists
+        if unit_path.exists():
+            await self.backup_existing_unit(unit_path)
+
+        # Ensure target directory exists
+        self._dir_manager.ensure_directory_exists(target_dir)
+
+        # Write file atomically
+        temp_path = unit_path.with_suffix(f'{unit_path.suffix}.tmp')
+
+        try:
+            temp_path.write_text(content, encoding='utf-8')
+            temp_path.rename(unit_path)
+            unit_path.chmod(0o644)
+
+            self._logger.info(f'Successfully wrote unit file: {unit_path}')
+            return unit_path
+
+        except Exception as e:
+            # Clean up temp file on error
+            if temp_path.exists():
+                temp_path.unlink()
+            self._logger.error(f'Failed to write unit file {unit_name}: {e}')
+            raise
+
+    async def remove_unit_file(
+        self,
+        unit_name: str,
+        system_level: bool,
+    ) -> bool:
+        """Remove a single unit file.
+
+        Args:
+            unit_name: Name of the unit file to remove
+            system_level: Whether to remove from system or user level
+
+        Returns:
+            True if file was removed, False if it didn't exist
+
+        Raises:
+            Exception: If removal fails
+        """
+        try:
+            unit_path = await self.get_unit_file_path(unit_name, system_level)
+
+            if not unit_path.exists():
+                self._logger.debug(f'Unit file does not exist: {unit_path}')
+                return False
+
+            unit_path.unlink()
+            self._logger.info(f'Removed unit file: {unit_path}')
+            return True
+
+        except Exception as e:
+            self._logger.error(f'Failed to remove unit file {unit_name}: {e}')
+            raise

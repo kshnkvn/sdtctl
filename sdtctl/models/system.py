@@ -1,19 +1,20 @@
 import time
 from typing import Self
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from sdtctl.utils import BaseModel
 
 
 class SystemBootInfo(BaseModel):
     """System boot time information.
+
+    Args:
+        boot_time_seconds: Boot time in seconds since epoch
     """
     model_config = {'frozen': True}
 
-    boot_time_seconds: int = Field(
-        ...,
-        gt=0,
-        description='Boot time in seconds since epoch',
-    )
+    boot_time_seconds: int = Field(..., gt=0)
 
     @classmethod
     def from_proc_stat(cls) -> Self:

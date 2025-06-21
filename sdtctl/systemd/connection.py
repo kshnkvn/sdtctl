@@ -7,7 +7,7 @@ from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import BusType
 from dbus_next.errors import DBusError
 
-from sdtctl.dbus.constants import ConnectionConfig, DBusConstants
+from sdtctl.systemd.types import ConnectionConfig, DBusConstants
 
 
 class SingletonMeta(type):
@@ -192,7 +192,6 @@ class DBusConnectionManager(metaclass=SingletonMeta):
     async def _perform_health_check_call(self) -> bool:
         """Perform the actual D-Bus health check call.
         """
-        # A lightweight call to check if the bus is responsive.
         introspection = await self._bus.introspect(  # type: ignore
             DBusConstants.SERVICE_NAME,
             DBusConstants.OBJECT_PATH,
